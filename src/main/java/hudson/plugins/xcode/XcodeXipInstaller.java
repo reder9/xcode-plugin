@@ -133,11 +133,16 @@ public class XcodeXipInstaller extends ToolInstaller {
         return false;
     }
 
+    protected ArgumentListBuilder getXipCommandLine(FilePath archive) {
+        ArgumentListBuilder args = new ArgumentListBuilder();
+        args.add("/usr/bin/xip", "--expand", archive.getRemote());
+        return args;
+    }
+
     protected int extractXip(FilePath archive, FilePath destinationDir, Node node, TaskListener log)
             throws IOException, InterruptedException {
         Launcher launcher = node.createLauncher(log);
-        ArgumentListBuilder args = new ArgumentListBuilder();
-        args.add("/usr/bin/xip", "--expand", archive.getRemote());
+        ArgumentListBuilder args = getXipCommandLine(archive);
 
         return launcher.launch()
                 .cmds(args)
@@ -147,14 +152,19 @@ public class XcodeXipInstaller extends ToolInstaller {
                 .join();
     }
 
+    protected ArgumentListBuilder getCurlCommandLine(String downloadUrl, FilePath targetFile) {
+        ArgumentListBuilder curlArgs = new ArgumentListBuilder();
+        curlArgs.add("/usr/bin/curl", "-f", "-s", "-S", "-L", "-o", targetFile.getRemote(), downloadUrl);
+        return curlArgs;
+    }
+
     protected void downloadArchive(String downloadUrl, FilePath targetFile, Node node, TaskListener log)
             throws IOException, InterruptedException {
         if ((downloadUrl.startsWith("http://") || downloadUrl.startsWith("https://")) && isCurlAvailable(node)) {
             try {
                 log.getLogger().println("[Xcode] Downloading .xip via curl on " + node.getDisplayName() + "...");
                 Launcher launcher = node.createLauncher(log);
-                ArgumentListBuilder curlArgs = new ArgumentListBuilder();
-                curlArgs.add("/usr/bin/curl", "-f", "-s", "-S", "-L", "-o", targetFile.getRemote(), downloadUrl);
+                ArgumentListBuilder curlArgs = getCurlCommandLine(downloadUrl, targetFile);
                 int exit = launcher.launch().cmds(curlArgs).stdout(log).stderr(log.getLogger()).join();
                 if (exit == 0 && targetFile.exists() && targetFile.length() > 0) {
                     return;
