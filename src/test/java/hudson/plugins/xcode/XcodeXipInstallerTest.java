@@ -419,6 +419,64 @@ public class XcodeXipInstallerTest {
         } catch (IOException expected) {}
     }
 
+    @Test
+    public void testDownloadArchiveCurlSuccessTargetNotCreated() throws Exception {
+        File destFile = temp.newFile("download_target_missing.xip");
+        destFile.delete();
+        FilePath target = new FilePath(destFile);
+
+        XcodeXipInstaller installer = new XcodeXipInstaller(null, "http://127.0.0.1:9/dummy.xip", null) {
+            @Override
+            protected boolean isCurlAvailable(Node node) {
+                return true;
+            }
+
+            @Override
+            protected ArgumentListBuilder getCurlCommandLine(String downloadUrl, FilePath targetFile) {
+                ArgumentListBuilder args = new ArgumentListBuilder();
+                if (j.jenkins.createLauncher(TaskListener.NULL).isUnix()) {
+                    args.add("true");
+                } else {
+                    args.add("cmd.exe", "/c", "exit", "0");
+                }
+                return args;
+            }
+        };
+
+        try {
+            installer.downloadArchive("http://127.0.0.1:9/dummy.xip", target, j.jenkins, TaskListener.NULL);
+        } catch (IOException expected) {}
+    }
+
+    @Test
+    public void testDownloadArchiveCurlSuccessTargetEmptyFile() throws Exception {
+        File destFile = temp.newFile("download_target_empty.xip");
+        Files.write(destFile.toPath(), new byte[0]);
+        FilePath target = new FilePath(destFile);
+
+        XcodeXipInstaller installer = new XcodeXipInstaller(null, "http://127.0.0.1:9/dummy.xip", null) {
+            @Override
+            protected boolean isCurlAvailable(Node node) {
+                return true;
+            }
+
+            @Override
+            protected ArgumentListBuilder getCurlCommandLine(String downloadUrl, FilePath targetFile) {
+                ArgumentListBuilder args = new ArgumentListBuilder();
+                if (j.jenkins.createLauncher(TaskListener.NULL).isUnix()) {
+                    args.add("true");
+                } else {
+                    args.add("cmd.exe", "/c", "exit", "0");
+                }
+                return args;
+            }
+        };
+
+        try {
+            installer.downloadArchive("http://127.0.0.1:9/dummy.xip", target, j.jenkins, TaskListener.NULL);
+        } catch (IOException expected) {}
+    }
+
     private static class TestableXcodeXipInstaller extends XcodeXipInstaller {
         int exitCode = 0;
         int extractCount = 0;
