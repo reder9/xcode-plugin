@@ -238,7 +238,10 @@ public class XcodeXipInstallerTest {
         File dummyXip = new File(dummyRepoDir, "Xcode.xip");
         Files.writeString(dummyXip.toPath(), "mock", StandardCharsets.UTF_8);
 
-        TestableXcodeXipInstaller installer = new TestableXcodeXipInstaller(dummyXip.toURI().toURL().toString(), null);
+        String subdir = "CustomXcode.app/Contents/Developer";
+        TestableXcodeXipInstaller installer = new TestableXcodeXipInstaller(dummyXip.toURI().toURL().toString(), subdir);
+        installer.simulateCustomSubdir = true;
+
         XcodeInstallation tool = new XcodeInstallation("Xcode Reinstall", null, null);
         FilePath installedPath = installer.performInstallation(tool, j.jenkins, TaskListener.NULL);
         assertEquals(1, installer.extractCount);
