@@ -114,7 +114,7 @@ public class XcodeInstallation extends ToolInstallation implements NodeSpecific<
             if (instance != null) {
                 instance.checkPermission(Jenkins.ADMINISTER);
             }
-            if (value == null || value.getPath().isEmpty()) {
+            if (value == null || value.getPath().trim().isEmpty()) {
                 return FormValidation.ok();
             }
             String path = value.getPath() + "/usr/bin/xcodebuild";
