@@ -211,6 +211,26 @@ public class XcodeXipInstallerTest {
         assertEquals(fileUrl, Files.readString(markerFile.toPath()).trim());
     }
 
+    @Test
+    public void testPerformInstallationReinstallsWhenResolvedHomeMissing() throws Exception {
+        File installFolder = temp.newFolder();
+        File archiveSource = temp.newFile("sample_xcode3.xip");
+        Files.writeString(archiveSource.toPath(), "mock-xip-content", StandardCharsets.UTF_8);
+        String fileUrl = archiveSource.toURI().toURL().toString();
+
+        String subdir = "CustomXcode.app/Contents/Developer";
+        File markerFile = new File(installFolder, ".xip-installed");
+        Files.writeString(markerFile.toPath(), fileUrl + "|" + subdir, StandardCharsets.UTF_8);
+
+        ToolInstallation tool = new XcodeInstallation("xcode-missing-home", installFolder.getAbsolutePath(), Collections.emptyList());
+        TestableXcodeXipInstaller installer = new TestableXcodeXipInstaller(fileUrl, subdir);
+        installer.simulateCustomSubdir = true;
+
+        FilePath result = installer.performInstallation(tool, j.jenkins, TaskListener.NULL);
+        assertNotNull(result);
+        assertEquals(1, installer.extractCount);
+    }
+
     @Test(expected = AbortException.class)
     public void testPerformInstallationExtractionFailure() throws Exception {
         File installFolder = temp.newFolder();

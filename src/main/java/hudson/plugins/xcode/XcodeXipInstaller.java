@@ -220,10 +220,7 @@ public class XcodeXipInstaller extends ToolInstaller {
 
         @RequirePOST
         public FormValidation doCheckUrl(@QueryParameter String value) {
-            Jenkins instance = Jenkins.getInstanceOrNull();
-            if (instance != null) {
-                instance.checkPermission(Jenkins.ADMINISTER);
-            }
+            Jenkins.get().checkPermission(Jenkins.ADMINISTER);
             value = Util.fixEmptyAndTrim(value);
             if (value == null) {
                 return FormValidation.error("URL is required.");

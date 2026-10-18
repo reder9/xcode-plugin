@@ -92,9 +92,7 @@ public class XcodeInstallation extends ToolInstallation implements NodeSpecific<
     public static class DescriptorImpl extends ToolDescriptor<XcodeInstallation> {
 
         public DescriptorImpl() {
-            if (Jenkins.getInstanceOrNull() != null) {
-                load();
-            }
+            load();
         }
 
         @Override
@@ -110,10 +108,7 @@ public class XcodeInstallation extends ToolInstallation implements NodeSpecific<
         }
 
         public FormValidation doCheckHome(@QueryParameter File value) {
-            Jenkins instance = Jenkins.getInstanceOrNull();
-            if (instance != null) {
-                instance.checkPermission(Jenkins.ADMINISTER);
-            }
+            Jenkins.get().checkPermission(Jenkins.ADMINISTER);
             if (value == null || value.getPath().trim().isEmpty()) {
                 return FormValidation.ok();
             }
