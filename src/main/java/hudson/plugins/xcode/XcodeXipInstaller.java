@@ -93,17 +93,13 @@ public class XcodeXipInstaller extends ToolInstaller {
         String cacheMarker = url + (subdir != null ? "|" + subdir : "");
         FilePath markerFile = dir.child(".xip-installed");
         if (markerFile.exists()) {
-            try {
-                String installed = markerFile.readToString().trim();
-                if (installed.equals(cacheMarker)) {
-                    FilePath resolved = resolveHome(dir);
-                    if (resolved.exists()) {
-                        log.getLogger().println("[Xcode] Xcode already installed from " + url + " at " + resolved.getRemote());
-                        return resolved;
-                    }
+            String installed = markerFile.readToString().trim();
+            if (installed.equals(cacheMarker)) {
+                FilePath resolved = resolveHome(dir);
+                if (resolved.exists()) {
+                    log.getLogger().println("[Xcode] Xcode already installed from " + url + " at " + resolved.getRemote());
+                    return resolved;
                 }
-            } catch (IOException ignored) {
-                // If marker cannot be read, proceed with fresh install
             }
         }
 
