@@ -92,7 +92,9 @@ public class XcodeInstallation extends ToolInstallation implements NodeSpecific<
     public static class DescriptorImpl extends ToolDescriptor<XcodeInstallation> {
 
         public DescriptorImpl() {
-            load();
+            if (Jenkins.getInstanceOrNull() != null) {
+                load();
+            }
         }
 
         @Override

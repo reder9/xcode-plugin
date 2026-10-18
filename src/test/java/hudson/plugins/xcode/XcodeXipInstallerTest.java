@@ -131,6 +131,14 @@ public class XcodeXipInstallerTest {
         assertEquals(baseDir.getRemote(), resolved.getRemote());
     }
 
+    @Test
+    public void testXcodeInstallationDoCheckHome() {
+        XcodeInstallation.DescriptorImpl installationDescriptor = new XcodeInstallation.DescriptorImpl();
+        assertEquals(FormValidation.Kind.OK, installationDescriptor.doCheckHome(null).kind);
+        assertEquals(FormValidation.Kind.OK, installationDescriptor.doCheckHome(new File("")).kind);
+        assertEquals(FormValidation.Kind.OK, installationDescriptor.doCheckHome(new File("   ")).kind);
+    }
+
     private static class DummyToolInstallation extends ToolInstallation {
         public DummyToolInstallation(String name, String home) {
             super(name, home, null);
