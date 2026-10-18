@@ -108,7 +108,13 @@ public class XcodeInstallation extends ToolInstallation implements NodeSpecific<
         }
 
         public FormValidation doCheckHome(@QueryParameter File value) {
-            Jenkins.getInstance().checkPermission(Jenkins.ADMINISTER);
+            Jenkins instance = Jenkins.getInstanceOrNull();
+            if (instance != null) {
+                instance.checkPermission(Jenkins.ADMINISTER);
+            }
+            if (value == null || value.getPath().isEmpty()) {
+                return FormValidation.ok();
+            }
             String path = value.getPath() + "/usr/bin/xcodebuild";
 
             return FormValidation.validateExecutable(path);
