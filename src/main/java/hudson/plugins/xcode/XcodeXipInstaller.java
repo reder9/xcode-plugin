@@ -84,14 +84,10 @@ public class XcodeXipInstaller extends ToolInstaller {
         FilePath dir = preferredLocation(tool, node);
         dir.mkdirs();
 
-        VirtualChannel channel = node.getChannel();
-        if (channel != null) {
-            FilePath xipBinary = new FilePath(channel, "/usr/bin/xip");
-            if (!xipBinary.exists()) {
-                throw new AbortException(
-                        "Xcode .xip extraction is only supported on macOS nodes with /usr/bin/xip. "
-                                + "Node '" + node.getDisplayName() + "' does not have /usr/bin/xip.");
-            }
+        if (!isXipAvailable(node)) {
+            throw new AbortException(
+                    "Xcode .xip extraction is only supported on macOS nodes with /usr/bin/xip. "
+                            + "Node '" + node.getDisplayName() + "' does not have /usr/bin/xip.");
         }
 
         String cacheMarker = url + (subdir != null ? "|" + subdir : "");
@@ -117,16 +113,7 @@ public class XcodeXipInstaller extends ToolInstaller {
         downloadArchive(url, tempArchive, node, log);
 
         log.getLogger().println("[Xcode] Extracting .xip archive using /usr/bin/xip --expand...");
-        Launcher launcher = node.createLauncher(log);
-        ArgumentListBuilder args = new ArgumentListBuilder();
-        args.add("/usr/bin/xip", "--expand", tempArchive.getRemote());
-
-        int exitCode = launcher.launch()
-                .cmds(args)
-                .pwd(dir)
-                .stdout(log)
-                .stderr(log.getLogger())
-                .join();
+        int exitCode = extractXip(tempArchive, dir, node, log);
 
         if (exitCode != 0) {
             tempArchive.delete();
@@ -141,18 +128,45 @@ public class XcodeXipInstaller extends ToolInstaller {
         return resolved;
     }
 
+    protected boolean isXipAvailable(Node node) throws IOException, InterruptedException {
+        VirtualChannel channel = node.getChannel();
+        if (channel != null) {
+            FilePath xipBinary = new FilePath(channel, "/usr/bin/xip");
+            return xipBinary.exists();
+        }
+        return false;
+    }
+
+    protected int extractXip(FilePath archive, FilePath destinationDir, Node node, TaskListener log)
+            throws IOException, InterruptedException {
+        Launcher launcher = node.createLauncher(log);
+        ArgumentListBuilder args = new ArgumentListBuilder();
+        args.add("/usr/bin/xip", "--expand", archive.getRemote());
+
+        return launcher.launch()
+                .cmds(args)
+                .pwd(destinationDir)
+                .stdout(log)
+                .stderr(log.getLogger())
+                .join();
+    }
+
     protected void downloadArchive(String downloadUrl, FilePath targetFile, Node node, TaskListener log)
             throws IOException, InterruptedException {
         if ((downloadUrl.startsWith("http://") || downloadUrl.startsWith("https://")) && isCurlAvailable(node)) {
-            log.getLogger().println("[Xcode] Downloading .xip via curl on " + node.getDisplayName() + "...");
-            Launcher launcher = node.createLauncher(log);
-            ArgumentListBuilder curlArgs = new ArgumentListBuilder();
-            curlArgs.add("/usr/bin/curl", "-f", "-s", "-S", "-L", "-o", targetFile.getRemote(), downloadUrl);
-            int exit = launcher.launch().cmds(curlArgs).stdout(log).stderr(log.getLogger()).join();
-            if (exit == 0 && targetFile.exists() && targetFile.length() > 0) {
-                return;
+            try {
+                log.getLogger().println("[Xcode] Downloading .xip via curl on " + node.getDisplayName() + "...");
+                Launcher launcher = node.createLauncher(log);
+                ArgumentListBuilder curlArgs = new ArgumentListBuilder();
+                curlArgs.add("/usr/bin/curl", "-f", "-s", "-S", "-L", "-o", targetFile.getRemote(), downloadUrl);
+                int exit = launcher.launch().cmds(curlArgs).stdout(log).stderr(log.getLogger()).join();
+                if (exit == 0 && targetFile.exists() && targetFile.length() > 0) {
+                    return;
+                }
+                log.getLogger().println("[Xcode] Direct curl download failed (exit code " + exit + "), streaming through controller...");
+            } catch (IOException e) {
+                log.getLogger().println("[Xcode] Direct curl download failed (" + e.getMessage() + "), streaming through controller...");
             }
-            log.getLogger().println("[Xcode] Direct curl download failed (exit code " + exit + "), streaming through controller...");
         }
 
         log.getLogger().println("[Xcode] Streaming .xip from " + downloadUrl + " to agent...");
@@ -165,7 +179,7 @@ public class XcodeXipInstaller extends ToolInstaller {
         }
     }
 
-    private boolean isCurlAvailable(Node node) throws IOException, InterruptedException {
+    protected boolean isCurlAvailable(Node node) throws IOException, InterruptedException {
         VirtualChannel channel = node.getChannel();
         if (channel == null) {
             return false;
@@ -175,7 +189,7 @@ public class XcodeXipInstaller extends ToolInstaller {
     }
 
     public FilePath resolveHome(FilePath dir) throws IOException, InterruptedException {
-        if (subdir != null && !subdir.isBlank()) {
+        if (subdir != null) {
             return dir.child(subdir);
         }
         FilePath xcodeAppDeveloper = dir.child("Xcode.app/Contents/Developer");

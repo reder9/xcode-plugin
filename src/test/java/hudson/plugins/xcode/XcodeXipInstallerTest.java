@@ -24,20 +24,30 @@
 
 package hudson.plugins.xcode;
 
+import hudson.AbortException;
 import hudson.FilePath;
+import hudson.model.Node;
+import hudson.model.TaskListener;
+import hudson.slaves.DumbSlave;
 import hudson.tools.ToolInstallation;
 import hudson.util.FormValidation;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Collections;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.jvnet.hudson.test.JenkinsRule;
 
 import static org.junit.Assert.*;
 
 public class XcodeXipInstallerTest {
+
+    @Rule
+    public JenkinsRule j = new JenkinsRule();
 
     @Rule
     public TemporaryFolder temp = new TemporaryFolder();
@@ -132,11 +142,187 @@ public class XcodeXipInstallerTest {
     }
 
     @Test
-    public void testXcodeInstallationDoCheckHome() {
+    public void testXcodeInstallationDoCheckHome() throws Exception {
         XcodeInstallation.DescriptorImpl installationDescriptor = new XcodeInstallation.DescriptorImpl();
+        assertEquals("Xcode tools", installationDescriptor.getDisplayName());
         assertEquals(FormValidation.Kind.OK, installationDescriptor.doCheckHome(null).kind);
         assertEquals(FormValidation.Kind.OK, installationDescriptor.doCheckHome(new File("")).kind);
         assertEquals(FormValidation.Kind.OK, installationDescriptor.doCheckHome(new File("   ")).kind);
+
+        File nonExistent = new File(temp.newFolder(), "missing_dir");
+        assertEquals(FormValidation.Kind.ERROR, installationDescriptor.doCheckHome(nonExistent).kind);
+
+        File fakeXcode = temp.newFolder();
+        File xcodebuild = new File(fakeXcode, "usr/bin/xcodebuild");
+        assertTrue(xcodebuild.getParentFile().mkdirs());
+        assertTrue(xcodebuild.createNewFile());
+        xcodebuild.setExecutable(true);
+        assertEquals(FormValidation.Kind.OK, installationDescriptor.doCheckHome(fakeXcode).kind);
+    }
+
+    @Test(expected = AbortException.class)
+    public void testPerformInstallationThrowsWhenXipNotAvailable() throws Exception {
+        File installFolder = temp.newFolder();
+        ToolInstallation tool = new XcodeInstallation("xcode-default", installFolder.getAbsolutePath(), Collections.emptyList());
+        XcodeXipInstaller installer = new XcodeXipInstaller(null, "https://example.com/Xcode.xip", null);
+        installer.performInstallation(tool, j.jenkins, TaskListener.NULL);
+    }
+
+    @Test
+    public void testPerformInstallationSuccessAndCacheHit() throws Exception {
+        File installFolder = temp.newFolder();
+        File archiveSource = temp.newFile("sample_xcode.xip");
+        Files.writeString(archiveSource.toPath(), "mock-xip-content", StandardCharsets.UTF_8);
+        String fileUrl = archiveSource.toURI().toURL().toString();
+
+        ToolInstallation tool = new XcodeInstallation("xcode-test", installFolder.getAbsolutePath(), Collections.emptyList());
+
+        TestableXcodeXipInstaller installer = new TestableXcodeXipInstaller(fileUrl, null);
+        FilePath result = installer.performInstallation(tool, j.jenkins, TaskListener.NULL);
+
+        assertNotNull(result);
+        assertEquals(new FilePath(new File(installFolder, "Xcode.app/Contents/Developer")).getRemote(), result.getRemote());
+        assertTrue(new File(installFolder, ".xip-installed").exists());
+        assertFalse(new File(installFolder, "xcode_installer.xip").exists());
+        assertEquals(1, installer.extractCount);
+
+        // Second run: cache hit should return existing resolved home without re-extracting
+        FilePath cachedResult = installer.performInstallation(tool, j.jenkins, TaskListener.NULL);
+        assertEquals(result.getRemote(), cachedResult.getRemote());
+        assertEquals(1, installer.extractCount);
+    }
+
+    @Test
+    public void testPerformInstallationReinstallsOnMarkerMismatch() throws Exception {
+        File installFolder = temp.newFolder();
+        File archiveSource = temp.newFile("sample_xcode2.xip");
+        Files.writeString(archiveSource.toPath(), "mock-xip-content", StandardCharsets.UTF_8);
+        String fileUrl = archiveSource.toURI().toURL().toString();
+
+        File markerFile = new File(installFolder, ".xip-installed");
+        Files.writeString(markerFile.toPath(), "different-cache-marker", StandardCharsets.UTF_8);
+
+        ToolInstallation tool = new XcodeInstallation("xcode-mismatch", installFolder.getAbsolutePath(), Collections.emptyList());
+        TestableXcodeXipInstaller installer = new TestableXcodeXipInstaller(fileUrl, null);
+
+        FilePath result = installer.performInstallation(tool, j.jenkins, TaskListener.NULL);
+        assertNotNull(result);
+        assertEquals(1, installer.extractCount);
+        assertEquals(fileUrl, Files.readString(markerFile.toPath()).trim());
+    }
+
+    @Test(expected = AbortException.class)
+    public void testPerformInstallationExtractionFailure() throws Exception {
+        File installFolder = temp.newFolder();
+        File archiveSource = temp.newFile("sample_fail.xip");
+        Files.writeString(archiveSource.toPath(), "mock-xip-content", StandardCharsets.UTF_8);
+        String fileUrl = archiveSource.toURI().toURL().toString();
+
+        ToolInstallation tool = new XcodeInstallation("xcode-fail", installFolder.getAbsolutePath(), Collections.emptyList());
+        TestableXcodeXipInstaller installer = new TestableXcodeXipInstaller(fileUrl, null);
+        installer.exitCode = 1;
+
+        try {
+            installer.performInstallation(tool, j.jenkins, TaskListener.NULL);
+        } finally {
+            assertFalse(new File(installFolder, "xcode_installer.xip").exists());
+            assertFalse(new File(installFolder, ".xip-installed").exists());
+        }
+    }
+
+    @Test
+    public void testPerformInstallationWithCustomSubdir() throws Exception {
+        File installFolder = temp.newFolder();
+        File archiveSource = temp.newFile("sample_custom.xip");
+        Files.writeString(archiveSource.toPath(), "mock-xip-content", StandardCharsets.UTF_8);
+        String fileUrl = archiveSource.toURI().toURL().toString();
+
+        ToolInstallation tool = new XcodeInstallation("xcode-custom", installFolder.getAbsolutePath(), Collections.emptyList());
+        TestableXcodeXipInstaller installer = new TestableXcodeXipInstaller(fileUrl, "CustomXcode.app/Contents/Developer");
+        installer.simulateCustomSubdir = true;
+
+        FilePath result = installer.performInstallation(tool, j.jenkins, TaskListener.NULL);
+        assertEquals(new FilePath(new File(installFolder, "CustomXcode.app/Contents/Developer")).getRemote(), result.getRemote());
+        assertEquals(fileUrl + "|CustomXcode.app/Contents/Developer", Files.readString(new File(installFolder, ".xip-installed").toPath()).trim());
+    }
+
+    @Test
+    public void testIsXipAvailableAndIsCurlAvailable() throws Exception {
+        XcodeXipInstaller installer = new XcodeXipInstaller(null, "https://example.com/Xcode.xip", null);
+
+        // Disconnected node without remoting channel: both return false
+        DumbSlave disconnected = j.createSlave();
+        assertFalse(installer.isXipAvailable(disconnected));
+        assertFalse(installer.isCurlAvailable(disconnected));
+
+        // Node with an active channel
+        DumbSlave onlineSlave = j.createOnlineSlave();
+
+        // When channel != null: exercises FilePath checking on the channel
+        boolean xipAvail = installer.isXipAvailable(onlineSlave);
+        boolean curlAvail = installer.isCurlAvailable(onlineSlave);
+        // On non-macOS test runner, /usr/bin/xip does not exist
+        assertFalse(xipAvail);
+        assertNotNull(onlineSlave.getChannel());
+    }
+
+    @Test
+    public void testExtractXipDirect() throws Exception {
+        XcodeXipInstaller installer = new XcodeXipInstaller(null, "https://example.com/Xcode.xip", null);
+        FilePath archive = new FilePath(temp.newFile("dummy.xip"));
+        FilePath dest = new FilePath(temp.newFolder());
+
+        try {
+            installer.extractXip(archive, dest, j.jenkins, TaskListener.NULL);
+        } catch (IOException expected) {
+            // /usr/bin/xip does not exist on non-macOS test environments
+        }
+    }
+
+    @Test
+    public void testDownloadArchiveCurlFallback() throws Exception {
+        File destFile = temp.newFile("download_target.xip");
+        FilePath target = new FilePath(destFile);
+
+        XcodeXipInstaller installer = new XcodeXipInstaller(null, "http://127.0.0.1:9/unreachable.xip", null) {
+            @Override
+            protected boolean isCurlAvailable(Node node) {
+                return true;
+            }
+        };
+
+        try {
+            installer.downloadArchive("http://127.0.0.1:9/unreachable.xip", target, j.jenkins, TaskListener.NULL);
+        } catch (IOException expected) {
+            // Expected since localhost:9 is unreachable, but curl attempt was exercised
+        }
+    }
+
+    private static class TestableXcodeXipInstaller extends XcodeXipInstaller {
+        int exitCode = 0;
+        int extractCount = 0;
+        boolean simulateCustomSubdir = false;
+
+        public TestableXcodeXipInstaller(String url, String subdir) {
+            super(null, url, subdir);
+        }
+
+        @Override
+        protected boolean isXipAvailable(Node node) {
+            return true;
+        }
+
+        @Override
+        protected int extractXip(FilePath archive, FilePath destinationDir, Node node, TaskListener log)
+                throws IOException, InterruptedException {
+            extractCount++;
+            if (simulateCustomSubdir) {
+                destinationDir.child("CustomXcode.app/Contents/Developer").mkdirs();
+            } else {
+                destinationDir.child("Xcode.app/Contents/Developer").mkdirs();
+            }
+            return exitCode;
+        }
     }
 
     private static class DummyToolInstallation extends ToolInstallation {
